@@ -1,4 +1,4 @@
-# My SCM 
+# Lux 
 A personal [Source Control Management (SCM)](https://en.wikipedia.org/wiki/Version_control) system, like [Github](https://github.com) or [BitBucket](https://bitbucket.org), using [Gitea](https://gitea.io/en-us/), [MySQL](https://www.mysql.com/), and fronted by [Traefik](https://containo.us/traefik/). This particular Gitea implementation uses a [Docker](https://en.wikipedia.org/wiki/Docker_(software)) Compose multi-container setup on Ubuntu Linux (`docker-compose.yml`). This is essentially an extended version of the intructions at https://docs.gitea.io/en-us/install-with-docker/.
 
 This uses and creates the following:
