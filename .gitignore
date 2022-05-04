@@ -1,0 +1,5 @@
+backup.*
+acme.json
+.env
+mysql/
+*.swp

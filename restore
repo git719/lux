@@ -1,0 +1,27 @@
+#!/bin/bash
+# restore
+
+set -euo pipefail
+BACKUP=backup.tgz
+[[ ! -e "$BACKUP" ]] && printf "Missing '$BACKUP' file\n" && exit 1
+
+printf "About to:\n"
+printf "  1. Ensure old Traefik, Gitea, and MySQL containers are gone\n"
+printf "  2. Ensure old Gitea and MySQL volumes have been pruned\n"
+printf "  3. Restore from '$BACKUP' file\n"
+printf "  4. Restart all\n"
+msg="Proceed? Y/N "
+read -p "$msg" -n 1 && [[ ! $REPLY =~ ^[Yy]$ ]] && { printf "Aborted.\n" && exit 1 ; }
+printf "\n"
+
+printf "DATE = $(date)"
+docker-compose down
+docker volume rm db gitea
+printf "Restoring volumes, and files ...\n"
+sudo tar -C / -xf $BACKUP
+# Note that everything will be extracted at root (/)
+sudo mv /.env .
+sudo mv /acme.json .
+docker-compose --verbose up -d
+printf "Done\n"
+exit 0

@@ -1,0 +1,128 @@
+# My Gitea SCM
+
+version: "3.8"
+
+networks:
+  myscm_net_web:
+    external: true
+  myscm_net_db:
+    external: false
+
+volumes:
+  gitea:
+    driver: local
+    name: gitea    # Explicit names for consistency with backup & restore scripts
+  db:
+    driver: local
+    name: db
+
+services:
+  traefik:
+    image: "traefik:${VER_TRAEFIK}"
+    container_name: "traefik"
+    restart: unless-stopped
+    environment:
+      DO_AUTH_TOKEN: "${DO_AUTH_TOKEN}" # For DNS hosted at DigitalOcean
+    command:
+      - "--log.level=DEBUG"
+      - "--providers.docker=true"
+      - "--entryPoints.ssh.address=:22"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--providers.docker.exposedByDefault=false"
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--providers.docker.network=myscm_net_web"
+      - "--certificatesResolvers.le.acme.email=${LE_EMAIL}"
+      - "--certificatesResolvers.le.acme.storage=/acme.json"
+      - "--certificatesResolvers.le.acme.dnsChallenge=true"
+      - "--certificatesResolvers.le.acme.dnschallenge.provider=digitalocean"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=myscm_net_web"
+      # Redirect all HTTP traffic to HTTPS on this IP
+      - "traefik.http.routers.traefik.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.permanent=true"
+      # Route for Traefik Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=le"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_CREDS}"
+    networks:
+      myscm_net_web:
+        ipv4_address: ${IPADDRESS}
+    ports:
+      - "22"
+      - "80"
+      - "443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "${PWD}/acme.json:/acme.json"
+
+  gitea:
+    image: "gitea/gitea:${VER_GITEA}"
+    container_name: "gitea"
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${SITE_DOMAIN}
+      - SSH_DOMAIN=${SITE_DOMAIN}
+      - SSH_PORT=22
+      - SSH_LISTEN_PORT=22
+      - ROOT_URL=https://${SITE_DOMAIN}/
+      - USER_UID=1000
+      - USER_GID=1000
+      - DB_TYPE=mysql
+      - DB_HOST=db:3306
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWD=${DB_PASSWD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=myscm_net_web"
+      # Register this HTTPS router and service with Traefik
+      - "traefik.http.routers.giteaWeb.rule=Host(`${SITE_DOMAIN}`)"
+      - "traefik.http.routers.giteaWeb.entrypoints=websecure"
+      - "traefik.http.routers.giteaWeb.tls=true"
+      - "traefik.http.routers.giteaWeb.tls.certresolver=le"
+      - "traefik.http.routers.giteaWeb.service=giteaWeb"
+      - "traefik.http.services.giteaWeb.loadbalancer.server.port=3000"
+      # Register this TCP router and service with Traefik
+      - "traefik.tcp.routers.giteaSSH.rule=HostSNI(`*`)"
+      - "traefik.tcp.routers.giteaSSH.entrypoints=ssh"
+      - "traefik.tcp.routers.giteaSSH.service=giteaSSH"
+      - "traefik.tcp.services.giteaSSH.loadbalancer.server.port=22"
+    networks:
+      # Will use next available IP in respective network
+      myscm_net_web:
+      myscm_net_db:
+    ports:
+      - "3000"
+      - "22"
+    volumes:
+      - gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - traefik
+      - db
+
+  db:
+    image: "mysql:${VER_MYSQL}"
+    container_name: "mysql"
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+    networks:
+      - myscm_net_db
+    volumes:
+      - db:/var/lib/mysql
+

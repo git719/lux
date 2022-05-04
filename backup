@@ -1,0 +1,39 @@
+#!/bin/bash
+# backup
+#
+# Suggested crontab entry:
+#   USER=$LOGNAME FROM_DIR/backup FROM_DIR -f > FROM_DIR/backup.log 2>&1
+
+set -euo pipefail
+D="${1-empty}" # Directory to backup from
+F="${2-empty}" # Whether to Force backup and skip confirmation prompt
+
+if [[ $D == "empty" || ! -d $D || ( $F != "-f" && $# -gt 1 ) ]]; then
+    # If FROM_DIR is empty or doesn't exist or 2nd option is not -f
+    printf "Usage: $(basename ${0}) FROM_DIR [-f]\n"
+    exit 1
+fi
+
+if [[ $F != "-f" ]]; then
+    # Always confirm
+    printf "About to:\n"
+    printf "  1. Stop Traefik, Gitea and MySQL containers\n"
+    printf "  2. Backup all container volumes, and files .env & acme.json\n"
+    printf "  3. Restart everything\n"
+    msg="Proceed? Y/N "
+    read -p "$msg" -n 1 && [[ ! $REPLY =~ ^[Yy]$ ]] && { printf "Aborted.\n" && exit 1 ; }
+    printf "\n"
+fi
+
+export U="${USER-0}"
+printf "USER = $U\n"
+printf "DATE = $(date)\n"
+printf "PWD  = $D\n"
+printf "Creating 'backup.tgz'\n"
+cd $D
+/usr/local/bin/docker-compose stop
+sudo tar czfP backup.tgz /var/lib/docker/volumes/db /var/lib/docker/volumes/gitea .env acme.json
+sudo chown $U:$U backup.tgz
+/usr/local/bin/docker-compose start
+printf "Done\n"
+exit 0
